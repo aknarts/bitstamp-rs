@@ -46,9 +46,8 @@ impl BitstampEventStream {
 
     async fn handle_message(&self, msg: Message) -> Result<Option<types::Event>, Error> {
         match msg {
-            Message::Binary(bytes) => match String::from_utf8(bytes) {
+            Message::Binary(bytes) => match std::str::from_utf8(&bytes) {
                 Ok(json) => {
-                    let json = json.as_str();
                     let event: Result<types::Event, _> = serde_json::from_str(json);
                     match event {
                         Ok(event) => Ok(Some(event)),
@@ -82,6 +81,7 @@ impl BitstampEventStream {
                 debug!("Pong!");
                 Ok(None)
             }
+            Message::Frame(_) => Ok(None),
         }
     }
 
@@ -93,7 +93,7 @@ impl BitstampEventStream {
         })
         .map_err(|e| text_error_with_inner(format!("failed to serialize subscribe message: {}", e), e))?;
         self.ws_stream
-            .send(Message::Text(msg))
+            .send(Message::Text(msg.into()))
             .await
             .map_err(|e| text_error_with_inner(format!("failed to send subscribe message: {}", e), e))
     }
@@ -106,7 +106,7 @@ impl BitstampEventStream {
         })
         .map_err(|e| text_error_with_inner(format!("failed to serialize unsubscribe message: {}", e), e))?;
         self.ws_stream
-            .send(Message::Text(msg))
+            .send(Message::Text(msg.into()))
             .await
             .map_err(|e| text_error_with_inner(format!("failed to send unsubscribe message: {}", e), e))
     }

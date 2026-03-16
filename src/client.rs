@@ -3,10 +3,14 @@ use crate::error::{
 };
 use log::{debug, warn};
 use serde::{de::DeserializeOwned, Serialize};
-use hyper::{client::HttpConnector, Body, Client, Request};
-use hyper_tls::HttpsConnector;
+use hyper::Request;
+use hyper::body::Bytes;
+use hyper_rustls::HttpsConnectorBuilder;
+use hyper_util::client::legacy::Client;
+use hyper_util::rt::TokioExecutor;
+use http_body_util::{BodyExt, Full};
 use sha2::Sha256;
-use hmac::{Hmac, Mac, NewMac};
+use hmac::{Hmac, Mac};
 use std::str;
 use uuid::Uuid;
 
@@ -17,7 +21,8 @@ use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 const REST_HOST_PREFIX: &str = "www.bitstamp.net/api/v2";
 
 type HmacSha256 = Hmac<Sha256>;
-type WebClient = Client<HttpsConnector<HttpConnector>, Body>;
+type HttpsConnector = hyper_rustls::HttpsConnector<hyper_util::client::legacy::connect::HttpConnector>;
+type WebClient = Client<HttpsConnector, Full<Bytes>>;
 
 /// Bitstamp REST and WebSocket client.
 pub struct Bitstamp {
@@ -29,15 +34,19 @@ pub struct Bitstamp {
 impl Bitstamp {
     /// Creates a new Bitstamp client with API credentials.
     pub fn new(secret: String, key: String) -> Self {
-        let https = HttpsConnector::new();
-        let client = Client::builder().build::<_, hyper::Body>(https);
+        let https = HttpsConnectorBuilder::new()
+            .with_native_roots()
+            .expect("failed to load native TLS roots")
+            .https_or_http()
+            .enable_http1()
+            .build();
+        let client = Client::builder(TokioExecutor::new()).build(https);
 
-        let bts = Bitstamp {
+        Bitstamp {
             client,
             secret,
             key,
-        };
-        bts
+        }
     }
 
     /// Opens a WebSocket event stream connection.
@@ -148,11 +157,10 @@ impl Bitstamp {
             if has_body {
                 builder = builder.header("Content-Type", content_type);
             }
-            Body::from(payload)
+            Full::new(Bytes::from(payload))
         } else {
-            Body::empty()
+            Full::new(Bytes::new())
         };
-        debug!("{:?}", body);
 
         let req = builder
             .body(body)
@@ -161,8 +169,9 @@ impl Bitstamp {
         match self.client.request(req).await {
             Ok(resp) => {
                 let status = resp.status();
-                let body_bytes = hyper::body::to_bytes(resp.into_body()).await
-                    .map_err(|e| text_error_with_inner(format!("failed to read response body: {}", e), e))?;
+                let body_bytes = resp.into_body().collect().await
+                    .map_err(|e| text_error_with_inner(format!("failed to read response body: {}", e), e))?
+                    .to_bytes();
                 let reply = str::from_utf8(&body_bytes)
                     .map_err(|e| text_error_with_inner(format!("response body is not valid UTF-8: {}", e), e))?
                     .to_string();
