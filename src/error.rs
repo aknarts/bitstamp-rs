@@ -1,5 +1,5 @@
-use std::error::Error as StdError;
 use hyper::StatusCode;
+use std::error::Error as StdError;
 use std::fmt;
 
 /// The Errors that may occur when processing a `Request`.
@@ -17,8 +17,8 @@ struct Inner {
 
 impl Error {
     pub(crate) fn new<E>(kind: Kind, source: Option<E>) -> Error
-        where
-            E: Into<BoxError>,
+    where
+        E: Into<BoxError>,
     {
         Error {
             inner: Box::new(Inner {
@@ -37,11 +37,6 @@ impl Error {
             Kind::ErrorV2(code, _0, _1) => Some(code),
             _ => None,
         }
-    }
-
-    pub(crate) fn with_prefix<E: std::fmt::Display>(mut self, prefix: E) -> Error {
-        self.inner.description = format!("{}{}", prefix, self.inner.description);
-        self
     }
 }
 
@@ -84,7 +79,7 @@ impl fmt::Display for Error {
 
 impl fmt::Debug for Error {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let mut builder = f.debug_struct("reqwest::Error");
+        let mut builder = f.debug_struct("bitstamp::Error");
 
         builder.field("kind", &self.inner.kind);
 
@@ -95,7 +90,6 @@ impl fmt::Debug for Error {
         builder.finish()
     }
 }
-
 
 impl StdError for Error {
     fn source(&self) -> Option<&(dyn StdError + 'static)> {
@@ -130,4 +124,3 @@ pub(crate) fn v1_error(status: StatusCode, error: String) -> Error {
 pub(crate) fn v2_error(status: StatusCode, error: String, error_code: String) -> Error {
     Error::new(Kind::ErrorV2(status, error, error_code), None::<Error>)
 }
-
